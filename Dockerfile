@@ -1,6 +1,6 @@
 FROM quay.io/outline/shadowbox:stable
 
-RUN echo "Force Refresh v9"
+RUN echo "Force Refresh v11"
 
 ENTRYPOINT []
 
@@ -28,6 +28,7 @@ set -e
 PERSIST_DIR=/root/shadowbox/persisted-state
 CERT_FILE="${PERSIST_DIR}/shadowbox-selfsigned.crt"
 KEY_FILE="${PERSIST_DIR}/shadowbox-selfsigned.key"
+CONFIG_FILE="${PERSIST_DIR}/shadowbox_server_config.json"
 
 export SB_PUBLIC_IP="0.0.0.0"
 export SB_API_PORT="8443"
@@ -45,8 +46,16 @@ openssl req -x509 -nodes -days 3650 \
 chmod 600 "${KEY_FILE}"
 chmod 644 "${CERT_FILE}"
 
-printf '{"rollouts":[{"id":"single-port","enabled":true}],"portForNewAccessKeys":8443}' \
-    > "${PERSIST_DIR}/shadowbox_server_config.json"
+# API Prefix ဆောက်ပြီး config ထဲထည့်မည်
+API_PREFIX=$(openssl rand -hex 16)
+
+# Config file ဆောက်မည်
+cat > "${CONFIG_FILE}" << CONF
+{"portForNewAccessKeys":8443,"rollouts":[{"id":"single-port","enabled":true}],"apiPrefix":"${API_PREFIX}"}
+CONF
+
+echo "==> Config created:"
+cat "${CONFIG_FILE}"
 
 echo "==> Starting health check on port 10000..."
 node /healthcheck.js &
@@ -54,33 +63,28 @@ sleep 2
 
 echo "==> Starting Outline Server..."
 node /opt/outline-server/app/main.js &
-sleep 5
+sleep 8
 
-# ============================================
-# အောက်က တန်ဖိုးတွေ LOG မှာ ကြည့်ပါ
-# ============================================
+# Fingerprint ထုတ်မည်
+FINGERPRINT=$(openssl x509 -noout -fingerprint -sha256 \
+    -in "${CERT_FILE}" | sed 's/.*=//;s/://g')
+
 echo ""
 echo "========================================"
 echo "   OUTLINE SERVER INFO"
 echo "========================================"
-
-API_PREFIX=$(cat "${PERSIST_DIR}/shadowbox_server_config.json" | \
-    grep -o '"apiPrefix":"[^"]*"' | \
-    grep -o '[^"]*"$' | \
-    tr -d '"')
-
-FINGERPRINT=$(openssl x509 -noout -fingerprint -sha256 \
-    -in "${CERT_FILE}" | sed 's/.*=//;s/://g')
-
-echo "API_PREFIX   = ${API_PREFIX}"
-echo "FINGERPRINT  = ${FINGERPRINT}"
+echo "API_PREFIX  = ${API_PREFIX}"
+echo "FINGERPRINT = ${FINGERPRINT}"
 echo ""
-echo "=== Outline Manager JSON (ဒါကို Copy ကူးပါ) ==="
-echo "{\"apiUrl\":\"https://outline-server-teu5.onrender.com:8443/${API_PREFIX}\",\"certSha256\":\"${FINGERPRINT}\"}"
+echo "=== Website မှာ ဒီ ၂ ခုသုံးပါ ==="
+echo ""
+echo "API URL:"
+echo "https://outline-server-teu5.onrender.com:8443/${API_PREFIX}"
+echo ""
+echo "Certificate SHA256:"
+echo "${FINGERPRINT}"
 echo "========================================"
-echo ""
 
-# Process တွေ ဆက်ရှင်နေအောင်
 wait
 EOF
 
