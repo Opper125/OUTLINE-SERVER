@@ -15,5 +15,5 @@ ENV SB_API_PORT=7085
 ENV ROOT_DIR=/root/shadowbox
 ENV SB_CERTIFICATE_FILE=/root/shadowbox/persisted-state/shadowbox_server_certificates.json
 
-# (၅) Config အတုကို ဆောက်ပြီး စနစ်ကို စတင်မောင်းနှင်ခိုင်းခြင်း
-CMD ["sh", "-c", "echo '{\"id\":\"render-outline\",\"key\":[1,2,3]}' > /root/shadowbox/persisted-state/shadowbox_server_config.json && node /opt/outline-server/app/main.js"]
+# (၅) မရှိမဖြစ်လိုအပ်တဲ့ Config ဖိုင်ကော၊ Certificate ဖိုင်ကိုကော ကြိုဆောက်ပြီးမှ Node.js ကို မောင်းနှင်ခြင်း
+CMD ["sh", "-c", "echo '{\"id\":\"render-outline\",\"key\":[1,2,3]}' > /root/shadowbox/persisted-state/shadowbox_server_config.json && echo '{\"cert\":\"test\",\"key\":\"test\"}' > /root/shadowbox/persisted-state/shadowbox_server_certificates.json && node /opt/outline-server/app/main.js"]
