@@ -1,1 +1,1 @@
-FROM ghcr.io/secops-group/outline-server:latest
+FROM amirbavand/outline-server:latest
