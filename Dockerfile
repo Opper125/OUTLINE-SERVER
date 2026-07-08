@@ -1,21 +1,27 @@
 FROM quay.io/outline/shadowbox:stable
 
-RUN echo "Force Refresh v6"
+RUN echo "Force Refresh v8"
 
 ENTRYPOINT []
 
-# လိုအပ်သော directories
-RUN mkdir -p /root/shadowbox/persisted-state/prometheus/data && \
-    mkdir -p /root/shadowbox/persisted-state/tls
+RUN mkdir -p /root/shadowbox/persisted-state/prometheus/data
 
-# Prometheus config
 RUN printf 'global:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: prometheus\n    static_configs:\n      - targets: [localhost:9090]\n' \
     > /root/shadowbox/persisted-state/prometheus/config.yml
 
-# Alpine မှာ openssl နဲ့ socat ထည့်ခြင်း
-RUN apk add --no-cache openssl socat
+RUN apk add --no-cache openssl
 
-# Startup script
+# Health check server - port 10000
+RUN cat > /healthcheck.js << 'EOF'
+const http = require('http');
+http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('OK\n');
+}).listen(10000, '0.0.0.0', () => {
+  console.log('[HealthCheck] Listening on port 10000');
+});
+EOF
+
 RUN cat > /start.sh << 'EOF'
 #!/bin/sh
 set -e
@@ -24,14 +30,13 @@ PERSIST_DIR=/root/shadowbox/persisted-state
 CERT_FILE="${PERSIST_DIR}/shadowbox-selfsigned.crt"
 KEY_FILE="${PERSIST_DIR}/shadowbox-selfsigned.key"
 
-# ENV Variables သတ်မှတ်ခြင်း
 export SB_PUBLIC_IP="0.0.0.0"
 export SB_API_PORT="8443"
 export SB_CERTIFICATE_FILE="${CERT_FILE}"
 export SB_PRIVATE_KEY_FILE="${KEY_FILE}"
 export ROOT_DIR="/root/shadowbox"
 
-echo "==> Generating self-signed TLS certificate..."
+echo "==> Generating TLS certificate..."
 openssl req -x509 -nodes -days 3650 \
     -newkey rsa:2048 \
     -keyout "${KEY_FILE}" \
@@ -45,11 +50,14 @@ echo "==> Creating server config..."
 printf '{"rollouts":[{"id":"single-port","enabled":true}],"portForNewAccessKeys":8443}' \
     > "${PERSIST_DIR}/shadowbox_server_config.json"
 
-# Render က လိုချင်တဲ့ HTTP health check port (10000) ကို ဖွင့်ပေးခြင်း
-echo "==> Starting HTTP health check on port 10000..."
-while true; do
-    echo -e "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK" | nc -l -p 10000 -q 1
-done &
+# Health check အရင်ဆုံး start လုပ်ပြီးမှ Outline start လုပ်
+echo "==> Starting health check on port 10000..."
+node /healthcheck.js &
+HEALTH_PID=$!
+echo "==> Health check PID: ${HEALTH_PID}"
+
+# Health check ready ဖြစ်တဲ့အထိ စောင့်
+sleep 2
 
 echo "==> Starting Outline Server..."
 exec node /opt/outline-server/app/main.js
@@ -57,7 +65,6 @@ EOF
 
 RUN chmod +x /start.sh
 
-# Render က port 10000 ကို default သုံးတယ်
 EXPOSE 10000
 
 CMD ["/start.sh"]
