@@ -1,0 +1,15 @@
+app = "outline-server-saaxvw"
+primary_region = "sin"
+
+[[services]]
+  internal_port = 7085
+  protocol = "tcp"
+  [[services.ports]]
+    handlers = ["tls"]
+    port = 443
+
+[[services]]
+  internal_port = 7085
+  protocol = "udp"
+  [[services.ports]]
+    port = 443
