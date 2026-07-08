@@ -1,5 +1,8 @@
 FROM quay.io/outline/shadowbox:stable
 
+# Render ရဲ့ Cache ကို အတင်းဖျက်ခိုင်းရန် လှည့်စားချက်
+RUN echo "Force Refresh v2"
+
 # (၁) ပိတ်ထားတဲ့ ENTRYPOINT ကို လုံးဝ ဖြုတ်ချခြင်း
 ENTRYPOINT []
 
@@ -9,7 +12,7 @@ RUN mkdir -p /root/shadowbox/persisted-state/prometheus/data
 # (၃) Prometheus အတွက် မရှိမဖြစ်လိုအပ်တဲ့ config.yml ကို ဖန်တီးပေးခြင်း
 RUN echo "global:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: 'prometheus'\n    static_configs:\n      - targets: ['localhost:9090']" > /root/shadowbox/persisted-state/prometheus/config.yml
 
-# (၄) Render မှာ Env ထဲ သွားထည့်စရာမလိုအောင် Docker ထဲမှာတင် အသေ သတ်မှတ်ပေးခြင်း (နာမည်မှန် ပြင်ထားသည်)
+# (၄) Environment Variables များ (နာမည်မှန် ပြင်ထားသည်)
 ENV SB_PUBLIC_IP=0.0.0.0
 ENV SB_API_PORT=7085
 ENV ROOT_DIR=/root/shadowbox
