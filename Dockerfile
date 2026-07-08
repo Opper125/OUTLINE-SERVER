@@ -1,1 +1,1 @@
-FROM quay.io/outline/shadowbox:stable
+FROM ghcr.io/secops-group/outline-server:latest
