@@ -1,6 +1,6 @@
 FROM quay.io/outline/shadowbox:stable
 
-RUN echo "Force Refresh v8"
+RUN echo "Force Refresh v9"
 
 ENTRYPOINT []
 
@@ -11,7 +11,6 @@ RUN printf 'global:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: prom
 
 RUN apk add --no-cache openssl
 
-# Health check server - port 10000
 RUN cat > /healthcheck.js << 'EOF'
 const http = require('http');
 http.createServer((req, res) => {
@@ -46,21 +45,43 @@ openssl req -x509 -nodes -days 3650 \
 chmod 600 "${KEY_FILE}"
 chmod 644 "${CERT_FILE}"
 
-echo "==> Creating server config..."
 printf '{"rollouts":[{"id":"single-port","enabled":true}],"portForNewAccessKeys":8443}' \
     > "${PERSIST_DIR}/shadowbox_server_config.json"
 
-# Health check အရင်ဆုံး start လုပ်ပြီးမှ Outline start လုပ်
 echo "==> Starting health check on port 10000..."
 node /healthcheck.js &
-HEALTH_PID=$!
-echo "==> Health check PID: ${HEALTH_PID}"
-
-# Health check ready ဖြစ်တဲ့အထိ စောင့်
 sleep 2
 
 echo "==> Starting Outline Server..."
-exec node /opt/outline-server/app/main.js
+node /opt/outline-server/app/main.js &
+sleep 5
+
+# ============================================
+# အောက်က တန်ဖိုးတွေ LOG မှာ ကြည့်ပါ
+# ============================================
+echo ""
+echo "========================================"
+echo "   OUTLINE SERVER INFO"
+echo "========================================"
+
+API_PREFIX=$(cat "${PERSIST_DIR}/shadowbox_server_config.json" | \
+    grep -o '"apiPrefix":"[^"]*"' | \
+    grep -o '[^"]*"$' | \
+    tr -d '"')
+
+FINGERPRINT=$(openssl x509 -noout -fingerprint -sha256 \
+    -in "${CERT_FILE}" | sed 's/.*=//;s/://g')
+
+echo "API_PREFIX   = ${API_PREFIX}"
+echo "FINGERPRINT  = ${FINGERPRINT}"
+echo ""
+echo "=== Outline Manager JSON (ဒါကို Copy ကူးပါ) ==="
+echo "{\"apiUrl\":\"https://outline-server-teu5.onrender.com:8443/${API_PREFIX}\",\"certSha256\":\"${FINGERPRINT}\"}"
+echo "========================================"
+echo ""
+
+# Process တွေ ဆက်ရှင်နေအောင်
+wait
 EOF
 
 RUN chmod +x /start.sh
