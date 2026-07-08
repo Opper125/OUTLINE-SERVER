@@ -1,22 +1,59 @@
 FROM quay.io/outline/shadowbox:stable
 
-# Render ရဲ့ Cache ကို အတင်းဖျက်ခိုင်းရန် လှည့်စားချက်
-RUN echo "Force Refresh v2"
+RUN echo "Force Refresh v3"
 
-# (၁) ပိတ်ထားတဲ့ ENTRYPOINT ကို လုံးဝ ဖြုတ်ချခြင်း
 ENTRYPOINT []
 
-# (၂) လိုအပ်တဲ့ ဖိုင်တွဲများအားလုံးကို Build လုပ်ကတည်းက ကြိုဆောက်ထားခြင်း
-RUN mkdir -p /root/shadowbox/persisted-state/prometheus/data
+# လိုအပ်သော directory များ ဆောက်ခြင်း
+RUN mkdir -p /root/shadowbox/persisted-state/prometheus/data && \
+    mkdir -p /root/shadowbox/persisted-state/tls
 
-# (၃) Prometheus အတွက် မရှိမဖြစ်လိုအပ်တဲ့ config.yml ကို ဖန်တီးပေးခြင်း
-RUN echo "global:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: 'prometheus'\n    static_configs:\n      - targets: ['localhost:9090']" > /root/shadowbox/persisted-state/prometheus/config.yml
+# Prometheus config
+RUN printf 'global:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: prometheus\n    static_configs:\n      - targets: [localhost:9090]\n' \
+    > /root/shadowbox/persisted-state/prometheus/config.yml
 
-# (၄) Environment Variables များ (နာမည်မှန် ပြင်ထားသည်)
+# openssl ထည့်သွင်းပြီး Self-signed TLS Certificate ဆောက်ခြင်း
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends openssl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Startup script ဆောက်ခြင်း
+RUN cat > /start.sh << 'EOF'
+#!/bin/sh
+set -e
+
+PERSIST_DIR=/root/shadowbox/persisted-state
+CERT_FILE="${PERSIST_DIR}/shadowbox-selfsigned.crt"
+KEY_FILE="${PERSIST_DIR}/shadowbox-selfsigned.key"
+
+echo "==> Generating self-signed TLS certificate..."
+openssl req -x509 -nodes -days 3650 \
+    -newkey rsa:2048 \
+    -keyout "${KEY_FILE}" \
+    -out "${CERT_FILE}" \
+    -subj "/CN=outline-server" \
+    -addext "subjectAltName=IP:0.0.0.0"
+
+chmod 600 "${KEY_FILE}"
+chmod 644 "${CERT_FILE}"
+
+# Server config ဆောက်ခြင်း
+echo '{"rollouts":[{"id":"single-port","enabled":true}],"portForNewAccessKeys":443}' \
+    > "${PERSIST_DIR}/shadowbox_server_config.json"
+
+echo "==> Starting Outline Server..."
+exec node /opt/outline-server/app/main.js
+EOF
+
+RUN chmod +x /start.sh
+
+# Environment Variables (Render မှာ Port 10000 သာ open ဖြစ်)
 ENV SB_PUBLIC_IP=0.0.0.0
-ENV SB_API_PORT=7085
+ENV SB_API_PORT=443
+ENV SB_CERTIFICATE_FILE=/root/shadowbox/persisted-state/shadowbox-selfsigned.crt
+ENV SB_PRIVATE_KEY_FILE=/root/shadowbox/persisted-state/shadowbox-selfsigned.key
 ENV ROOT_DIR=/root/shadowbox
-ENV SB_CERT_FILE=/root/shadowbox/persisted-state/shadowbox_server_certificates.json
 
-# (၅) မရှိမဖြစ်လိုအပ်တဲ့ Config ဖိုင်ကော၊ Certificate ဖိုင်ကိုကော ကြိုဆောက်ပြီးမှ Node.js ကို မောင်းနှင်ခြင်း
-CMD ["sh", "-c", "echo '{\"id\":\"render-outline\",\"key\":[1,2,3]}' > /root/shadowbox/persisted-state/shadowbox_server_config.json && echo '{\"cert\":\"test\",\"key\":\"test\"}' > /root/shadowbox/persisted-state/shadowbox_server_certificates.json && node /opt/outline-server/app/main.js"]
+EXPOSE 443
+
+CMD ["/start.sh"]
