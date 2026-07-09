@@ -1,6 +1,6 @@
 FROM quay.io/outline/shadowbox:stable
 
-RUN echo "Force Refresh v13"
+RUN echo "Force Refresh v14"
 
 ENTRYPOINT []
 
@@ -14,11 +14,22 @@ RUN apk add --no-cache openssl
 RUN cat > /server.js << 'EOF'
 const http  = require('http');
 const https = require('https');
+const fs    = require('fs');
 const url   = require('url');
 
-const API_URL = process.env.OUTLINE_API_URL || '';
+const CONFIG_FILE = '/root/shadowbox/persisted-state/shadowbox_server_config.json';
 
-const server = http.createServer((req, res) => {
+function getPrefix() {
+  try {
+    const raw    = fs.readFileSync(CONFIG_FILE, 'utf8');
+    const config = JSON.parse(raw);
+    return config.apiPrefix || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -29,15 +40,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Health check
+  // Health check - prefix ပြပေးမည်
   if (req.url === '/' || req.url === '/health') {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end('OK');
+    const prefix = getPrefix();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', prefix: prefix }));
     return;
   }
 
-  // Proxy to Outline
-  const targetUrl = API_URL + req.url;
+  // Proxy request
+  const prefix    = getPrefix();
+  const targetUrl = `https://127.0.0.1:8443/${prefix}${req.url}`;
   console.log(`[Proxy] ${req.method} ${targetUrl}`);
 
   let body = [];
@@ -48,7 +61,7 @@ const server = http.createServer((req, res) => {
     const parsed = url.parse(targetUrl);
     const opts   = {
       hostname:           parsed.hostname,
-      port:               parsed.port || 8443,
+      port:               8443,
       path:               parsed.path,
       method:             req.method,
       headers:            { 'Content-Type': 'application/json' },
@@ -77,10 +90,9 @@ const server = http.createServer((req, res) => {
     if (body.length > 0) pr.write(body);
     pr.end();
   });
-});
 
-server.listen(10000, '0.0.0.0', () => {
-  console.log('[Server] Health+Proxy on port 10000');
+}).listen(10000, '0.0.0.0', () => {
+  console.log('[Server] Running on port 10000');
 });
 EOF
 
@@ -115,12 +127,7 @@ cat > "${CONFIG_FILE}" << CONF
 {"portForNewAccessKeys":8443,"rollouts":[{"id":"single-port","enabled":true}],"apiPrefix":"${API_PREFIX}"}
 CONF
 
-echo "==> Config:"
-cat "${CONFIG_FILE}"
-
-export OUTLINE_API_URL="https://127.0.0.1:8443/${API_PREFIX}"
-
-echo "==> Starting Health+Proxy on port 10000..."
+echo "==> Starting proxy on port 10000..."
 node /server.js &
 
 sleep 2
@@ -135,16 +142,8 @@ FINGERPRINT=$(openssl x509 -noout -fingerprint -sha256 \
 
 echo ""
 echo "========================================"
-echo "   OUTLINE SERVER INFO"
-echo "========================================"
 echo "API_PREFIX  = ${API_PREFIX}"
 echo "FINGERPRINT = ${FINGERPRINT}"
-echo ""
-echo "app.js မှာ ဒီတန်ဖိုးတွေ ထည့်ပါ"
-echo ""
-echo "proxyBase:  'https://outline-server-teu5.onrender.com'"
-echo "apiPrefix:  '${API_PREFIX}'"
-echo "certSha256: '${FINGERPRINT}'"
 echo "========================================"
 
 wait
